@@ -48,16 +48,25 @@ public class ChatServiceImpl extends ChatServiceGrpc.ChatServiceImplBase {
     }
 
     private void broadcast(String from, String content) {
+        // RFA04: Gerando o timestamp obrigatório
+        com.google.protobuf.Timestamp timestamp = com.google.protobuf.Timestamp.newBuilder()
+                .setSeconds(java.time.Instant.now().getEpochSecond())
+                .build();
+
         ChatMessage message = ChatMessage.newBuilder()
                 .setFrom(from)
                 .setContent(content)
+                .setTimestamp(timestamp)
                 .build();
+
+        System.out.println("Transmitindo de [" + from + "]: " + content);
 
         observers.forEach((user, observer) -> {
             try {
                 observer.onNext(message);
             } catch (Exception e) {
-                observers.remove(user); // Remove se o usuário caiu
+                System.out.println("Falha ao enviar para " + user + ", removendo.");
+                observers.remove(user);
             }
         });
     }

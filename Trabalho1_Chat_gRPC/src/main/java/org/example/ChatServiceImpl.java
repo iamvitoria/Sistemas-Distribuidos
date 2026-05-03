@@ -1,73 +1,92 @@
 package org.example;
 
+import com.google.protobuf.Timestamp;
 import elc1018.grpc.chat.protos.*;
+import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
+
+import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatServiceImpl extends ChatServiceGrpc.ChatServiceImplBase {
 
-    // Guarda os usuários ativos e seus canais de comunicação (RFA01 e RFA05)
-    private static final ConcurrentHashMap<String, StreamObserver<ChatMessage>> observers = new ConcurrentHashMap<>();
+    // Hash map seguro para threads que guarda o nome do usuário e o seu "tubo" de recebimento de mensagens
+    private static final ConcurrentHashMap<String, StreamObserver<ChatMessage>> clients = new ConcurrentHashMap<>();
 
     @Override
     public void register(User request, StreamObserver<RegisterResponse> responseObserver) {
-        String username = request.getUsername();
-        boolean success = false;
+        String nome = request.getUsername();
 
-        // RFA01: Verificar se o nome é único
-        if (!username.isEmpty() && !observers.containsKey(username)) {
-            success = true;
-            System.out.println("Usuário registrado: " + username);
+        // Verifica se o nome já está na lista
+        if (clients.containsKey(nome)) {
+            // Rejeita o registro
+            responseObserver.onNext(RegisterResponse.newBuilder().setSuccess(false).build());
+            responseObserver.onCompleted();
+        } else {
+            // Aceita o registro (a adição na lista acontece no receiveMessages)
+            responseObserver.onNext(RegisterResponse.newBuilder()
+                    .setSuccess(true)
+                    .setUsername(nome)
+                    .build());
+            responseObserver.onCompleted();
         }
-
-        RegisterResponse response = RegisterResponse.newBuilder()
-                .setSuccess(success)
-                .setUsername(username)
-                .build();
-
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
     }
 
     @Override
     public void receiveMessages(User request, StreamObserver<ChatMessage> responseObserver) {
-        // RFA05: Armazena o observer para enviar mensagens depois
-        observers.put(request.getUsername(), responseObserver);
+        String nome = request.getUsername();
 
-        // Notifica que alguém entrou (RFA07)
-        broadcast(request.getUsername(), "entrou no chat!");
+        // Adiciona o usuário à lista ativa de transmissões
+        clients.put(nome, responseObserver);
+
+        // Notifica todo mundo que ele entrou
+        broadcastMessage("Sistema", "O usuário [" + nome + "] entrou na sala.");
+
+        // Monitora o contexto da conexão. Se o cliente fechar o terminal, isso dispara automaticamente.
+        Context.current().addListener(context -> {
+            if (context.isCancelled()) {
+                clients.remove(nome);
+                broadcastMessage("Sistema", "O usuário [" + nome + "] saiu da sala.");
+            }
+        }, Runnable::run);
     }
 
     @Override
     public void sendMessage(ChatMessage request, StreamObserver<Ack> responseObserver) {
-        // RFA03/RFA04: Repassa a mensagem para todos
-        broadcast(request.getFrom(), request.getContent());
+        // 1. Pega a mensagem recebida e envia para todos
+        broadcastMessage(request.getFrom(), request.getContent());
 
-        responseObserver.onNext(Ack.newBuilder().setSuccess(true).build());
+        // 2. Cria a mensagem de confirmação (Ack) dizendo que deu tudo certo
+        Ack resposta = Ack.newBuilder()
+                .setSuccess(true)
+                .build();
+
+        // 3. Retorna a resposta para o cliente que enviou
+        responseObserver.onNext(resposta);
         responseObserver.onCompleted();
     }
 
-    private void broadcast(String from, String content) {
-        // RFA04: Gerando o timestamp obrigatório
-        com.google.protobuf.Timestamp timestamp = com.google.protobuf.Timestamp.newBuilder()
-                .setSeconds(java.time.Instant.now().getEpochSecond())
+    // Método auxiliar para construir e enviar a mensagem a todos
+    private void broadcastMessage(String remetente, String conteudo) {
+        Instant now = Instant.now();
+        Timestamp ts = Timestamp.newBuilder()
+                .setSeconds(now.getEpochSecond())
+                .setNanos(now.getNano())
                 .build();
 
-        ChatMessage message = ChatMessage.newBuilder()
-                .setFrom(from)
-                .setContent(content)
-                .setTimestamp(timestamp)
+        ChatMessage msg = ChatMessage.newBuilder()
+                .setFrom(remetente)
+                .setContent(conteudo)
+                .setTimestamp(ts)
                 .build();
 
-        System.out.println("Transmitindo de [" + from + "]: " + content);
-
-        observers.forEach((user, observer) -> {
+        // Itera sobre todos os clientes logados e manda a mensagem
+        for (StreamObserver<ChatMessage> client : clients.values()) {
             try {
-                observer.onNext(message);
+                client.onNext(msg);
             } catch (Exception e) {
-                System.out.println("Falha ao enviar para " + user + ", removendo.");
-                observers.remove(user);
+                // Ignora exceções se tentar enviar para um cliente que caiu bruscamente
             }
-        });
+        }
     }
 }

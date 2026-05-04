@@ -11,12 +11,12 @@ import java.util.Scanner;
 
 public class ClientChat {
     public static void main(String[] args) {
-        // 1. Configura a conexão com o servidor
+        // 1. configurando a conexão com o servidor
         ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051)
                 .usePlaintext()
                 .build();
 
-        // 2. Cria os Stubs (Blocking para chamadas simples, Async para o Stream)
+        // 2. criando os stubs (blocking-> chamadas simples, async-> para o stream)
         ChatServiceGrpc.ChatServiceBlockingStub blockingStub = ChatServiceGrpc.newBlockingStub(channel);
         ChatServiceGrpc.ChatServiceStub asyncStub = ChatServiceGrpc.newStub(channel);
 
@@ -27,7 +27,7 @@ public class ClientChat {
         String meuNome = "";
         User usuario = null;
 
-        // 3. RFA01: Tenta realizar o registo em loop para tratar nomes repetidos
+        // 3. RFA01 - Registo em loop para tratar nomes repetidos
         while (!logado) {
             System.out.print("Escolha o seu apelido: ");
             meuNome = scanner.nextLine();
@@ -39,29 +39,29 @@ public class ClientChat {
 
                 if (res.getSuccess()) {
                     System.out.println("Sistema: Login realizado como [" + res.getUsername() + "]");
-                    logado = true; // Sai do loop e prossegue para o chat
+                    logado = true; // sai do loop e prossegue para o chat
                 } else {
                     System.out.println("Sistema: ERRO - O nome '" + meuNome + "' já está em uso. Tente outro.");
                 }
             } catch (Exception e) {
                 System.err.println("Sistema: Não foi possível contactar o servidor. Verifique se o ServerChat está rodando.");
                 channel.shutdown();
-                return; // Encerra o programa se o servidor estiver offline
+                return; // encerra o programa se o servidor estiver off
             }
         }
 
-        // Cria uma cópia final (fixa) do nome para o Java não dar erro dentro da classe anônima
+        // cria uma cópia fixa do nome para o Java não dar erro dentro da classe anônima
         final String finalMeuNome = meuNome;
 
-        // 4. RFA05: Abre o canal (Stream) para receber mensagens
+        // 4. RFA05 - Abre o stream para receber mensagens
         asyncStub.receiveMessages(usuario, new StreamObserver<ChatMessage>() {
             @Override
             public void onNext(ChatMessage msg) {
-                // RFA06: A ordem é mantida pelo stream.
+                // RFA06 - A ordem é mantida pelo stream
                 // Filtramos para não ver as nossas próprias mensagens enviadas
                 if (!msg.getFrom().equals(finalMeuNome)) {
 
-                    // Formata o Timestamp (RFA04) para algo legível
+                    // RFA04 - Formatação do timestamp para algo legível
                     String horaFormatada = "";
                     if (msg.hasTimestamp()) {
                         horaFormatada = Instant.ofEpochSecond(msg.getTimestamp().getSeconds())
@@ -70,7 +70,7 @@ public class ClientChat {
                     }
 
                     System.out.println("\n" + horaFormatada + " [" + msg.getFrom() + "]: " + msg.getContent());
-                    System.out.print("> "); // Mantém o cursor de digitação limpo
+                    System.out.print("> "); // mantém linha limpa pra digitar próxima mensagem
                 }
             }
 
@@ -87,14 +87,14 @@ public class ClientChat {
             }
         });
 
-        // Pequeno delay para garantir que o stream de recepção está pronto
+        // delay para garantir que o stream de recepção está pronto
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
-        // 5. RFA03: Loop para envio de mensagens
+        // 5. RFA03 - Loop para envio de mensagens
         System.out.println("Sistema: Pode começar a conversar! (Pressione Enter para enviar)");
         while (true) {
             System.out.print("> ");
@@ -103,12 +103,12 @@ public class ClientChat {
             if (!texto.trim().isEmpty()) {
                 try {
                     blockingStub.sendMessage(ChatMessage.newBuilder()
-                            .setFrom(meuNome) // Aqui usamos o meuNome normal sem problemas
+                            .setFrom(meuNome) // aqui usamos o meuNome normal sem problemas
                             .setContent(texto)
                             .build());
                 } catch (Exception e) {
                     System.err.println("Erro ao enviar mensagem. O servidor pode ter caído.");
-                    break; // Sai do loop e finaliza o cliente se não conseguir enviar
+                    break; // sai do loop e finaliza o cliente se não conseguir enviar
                 }
             }
         }

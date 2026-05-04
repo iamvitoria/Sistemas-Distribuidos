@@ -88,7 +88,7 @@ public class ChatServiceImpl extends ChatServiceGrpc.ChatServiceImplBase {
             try {
                 client.onNext(msg);
             } catch (Exception e) {
-                // Ignora exceções se tentar enviar para um cliente que caiu
+                // ignora exceções se tentar enviar para um cliente que caiu
             }
         }
     }

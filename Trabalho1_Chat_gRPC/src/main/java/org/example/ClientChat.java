@@ -12,7 +12,7 @@ import java.util.Scanner;
 public class ClientChat {
     public static void main(String[] args) {
         // 1. configurando a conexão com o servidor
-        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 50051)
+        ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 51018)
                 .usePlaintext()
                 .build();
 

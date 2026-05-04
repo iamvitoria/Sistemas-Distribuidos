@@ -1,6 +1,6 @@
 ## Execução
 
-1. Iniciar o servidor executando a classe Main.java.
+1. Iniciar o servidor executando a classe ServerChat.java ou Main.java.
 2. Em seguida, executar uma ou mais instâncias da classe ClientChat.java para iniciar os clientes e permitir a comunicação entre eles.
 
 ## Alunas

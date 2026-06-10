@@ -23,4 +23,9 @@ public class Participant {
     public int getPort() {
         return port;
     }
+
+    @Override
+    public String toString() {
+        return "P" + id + " (" + ip + ":" + port + ")";
+    }
 }

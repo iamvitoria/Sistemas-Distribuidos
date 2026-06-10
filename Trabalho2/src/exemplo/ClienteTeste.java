@@ -2,6 +2,8 @@ package exemplo;
 
 import causalmulticast.*;
 
+import java.util.Scanner;
+
 public class ClienteTeste
         implements ICausalMulticast {
 
@@ -19,15 +21,58 @@ public class ClienteTeste
 
     @Override
     public void deliver(String msg) {
+
         System.out.println(
-                "Recebido: " + msg);
+                "\nRecebido: " + msg);
+    }
+
+    public void enviar(
+            String ip,
+            int port,
+            String msg) {
+
+        cm.sendUDP(
+                ip,
+                port,
+                msg);
     }
 
     public static void main(String[] args) {
 
-        ClienteTeste c =
+        Scanner scanner =
+                new Scanner(System.in);
+
+        System.out.print(
+                "Minha porta: ");
+
+        int minhaPorta =
+                Integer.parseInt(
+                        scanner.nextLine());
+
+        ClienteTeste cliente =
                 new ClienteTeste(
                         "localhost",
-                        5001);
+                        minhaPorta);
+
+        while (true) {
+
+            System.out.print(
+                    "\nDestino: ");
+
+            int destino =
+                    Integer.parseInt(
+                            scanner.nextLine());
+
+            System.out.print(
+                    "Mensagem: ");
+
+            String msg =
+                    scanner.nextLine();
+
+            cliente.enviar(
+                    "localhost",
+                    destino,
+                    msg);
+        }
     }
 }

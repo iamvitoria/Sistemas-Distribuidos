@@ -5,6 +5,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.io.*;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.Scanner;
 
 public class CausalMulticast {
 
@@ -15,6 +18,8 @@ public class CausalMulticast {
     private final int MULTICAST_PORT = 4446;
     private int myPort;
     private int[] vectorClock = new int[34];
+    private Queue<Message> messageBuffer = new LinkedList<>();
+    private List<DelayedMessage> delayedMessages = new ArrayList<>();
 
     public CausalMulticast(String ip, Integer port, ICausalMulticast client) {
         this.client = client;
@@ -49,8 +54,14 @@ public class CausalMulticast {
                     System.out.println("\nRelógio recebido:");
                     System.out.println(Arrays.toString(message.getVectorClock()));
 
-                    client.deliver(message.toString());
-
+                    if (canDeliver(message)) {
+                        deliverMessage(message);
+                        processBuffer();
+                    } else {
+                        messageBuffer.add(message);
+                        System.out.println("\nMensagem armazenada no buffer.");
+                        mostrarBuffer();
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -59,6 +70,80 @@ public class CausalMulticast {
 
         receiver.setDaemon(true);
         receiver.start();
+    }
+
+    private boolean canDeliver(Message message) {
+
+        int senderIndex = message.getSenderId() - 5001;
+        int[] msgVC = message.getVectorClock();
+
+        if (msgVC[senderIndex] != vectorClock[senderIndex] + 1) {
+            return false;
+        }
+
+        for (int i = 0; i < msgVC.length; i++) {
+            if (i != senderIndex && msgVC[i] > vectorClock[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void deliverMessage(Message message) {
+        int senderIndex = message.getSenderId() - 5001;
+        vectorClock[senderIndex]++;
+        System.out.println("\nMensagem entregue.");
+        System.out.println("Relógio local:");
+        System.out.println(Arrays.toString(vectorClock));
+        client.deliver(message.toString());
+    }
+
+    private void processBuffer() {
+        boolean delivered;
+
+        do {
+            delivered = false;
+            List<Message> remover = new ArrayList<>();
+
+            for (Message msg : messageBuffer) {
+                if (canDeliver(msg)) {
+                    deliverMessage(msg);
+                    remover.add(msg);
+                    delivered = true;
+                }
+            }
+
+            messageBuffer.removeAll(remover);
+
+        } while (delivered);
+    }
+
+    private void mostrarBuffer() {
+
+        System.out.println("\nBuffer:");
+
+        if (messageBuffer.isEmpty()) {
+            System.out.println("Vazio");
+            return;
+        }
+
+        for (Message msg : messageBuffer) {
+            System.out.println(msg.getContent());
+        }
+    }
+
+    private static class DelayedMessage {
+
+        private String ip;
+        private int port;
+        private Message message;
+
+        public DelayedMessage(String ip, int port, Message message) {
+            this.ip = ip;
+            this.port = port;
+            this.message = message;
+        }
     }
 
     private void iniciarDescoberta() {
@@ -192,24 +277,42 @@ public class CausalMulticast {
     public void mcsend(String msg, ICausalMulticast client) {
 
         vectorClock[getMyIndex()]++;
-
         int[] timestamp = vectorClock.clone();
-
-        Message message = new Message(
-                msg,
-                myPort,
-                timestamp);
+        Message message = new Message(msg, myPort, timestamp);
+        Scanner scanner = new Scanner(System.in);
 
         for (Participant p : participants) {
 
-            sendUDP(
-                    p.getIp(),
-                    p.getPort(),
-                    message);
+            System.out.println("\nEnviar para " + p.getPort() + "? (s/n)");
+            String resposta = scanner.nextLine();
+
+            if (resposta.equalsIgnoreCase("s")) {
+                sendUDP(p.getIp(), p.getPort(), message);
+            } else {
+                delayedMessages.add(new DelayedMessage(p.getIp(), p.getPort(), message));
+                System.out.println("Mensagem atrasada para " + p.getPort());
+            }
         }
 
         System.out.println("\nRelógio local:");
         System.out.println(Arrays.toString(vectorClock));
+    }
+
+    public void enviarMensagensAtrasadas() {
+
+        if (delayedMessages.isEmpty()) {
+            System.out.println("\nNão existem mensagens atrasadas.");
+            return;
+        }
+
+        List<DelayedMessage> enviadas = new ArrayList<>();
+
+        for (DelayedMessage dm : delayedMessages) {
+            sendUDP(dm.ip, dm.port, dm.message);
+            System.out.println("Mensagem enviada para " + dm.port);
+            enviadas.add(dm);
+        }
+        delayedMessages.removeAll(enviadas);
     }
 
     public List<Participant> getParticipants() {

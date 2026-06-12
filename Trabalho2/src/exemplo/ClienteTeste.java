@@ -52,6 +52,7 @@ public class ClienteTeste implements ICausalMulticast {
             System.out.println("\nTipo de envio:");
             System.out.println("1 - UDP");
             System.out.println("2 - Multicast");
+            System.out.println("3 - Enviar mensagens atrasadas");
             System.out.print("Escolha: ");
             String opcao = scanner.nextLine();
 
@@ -105,6 +106,8 @@ public class ClienteTeste implements ICausalMulticast {
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
                 cliente.cm.mcsend(msg, cliente);
+            } else if (opcao.equals("3")) {
+                cliente.cm.enviarMensagensAtrasadas();
             } else {
                 System.out.println("Opção inválida.");
             }

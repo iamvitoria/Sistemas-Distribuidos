@@ -9,6 +9,13 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Scanner;
 
+/**
+ * Classe principal do Middleware CausalMulticast.
+ * Responsável por gerenciar a descoberta de membros, envio de mensagens UDP
+ * simulando multicast, ordenação causal via relógios vetoriais e
+ * descarte de mensagens da memória via algoritmo de estabilização (matriz de relógios).
+ */
+
 public class CausalMulticast {
 
     private DatagramSocket socket;
@@ -24,7 +31,24 @@ public class CausalMulticast {
     // Buffer para mensagens entregues que aguardam estabilização
     private List<Message> historyBuffer = new ArrayList<>();
 
+    /**
+     * Construtor do Middleware.
+     * Inicializa os sockets UDP para comunicação e inicia as threads
+     * do Serviço de Descoberta (IP Multicast).
+     * * @param ip O endereço IP local do usuário (ex: "localhost").
+     * @param port A porta em que este usuário receberá as mensagens unicast.
+     * @param client Referência para a aplicação do usuário (para callback via deliver).
+     */
+
     public CausalMulticast(String ip, Integer port, ICausalMulticast client) {
+        /**
+         * Realiza o envio multicast de uma mensagem para todos os participantes descobertos.
+         * O método anexa o relógio vetorial atual (piggyback) para garantir a ordem causal.
+         * Permite atrasar mensagens manualmente para fins de demonstração.
+         * * @param msg O conteúdo da mensagem a ser enviada.
+         * @param client Referência do cliente solicitante do envio.
+         */
+
         this.client = client;
         this.myPort = port;
 

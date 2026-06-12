@@ -93,7 +93,7 @@ public class ClienteTeste implements ICausalMulticast {
 
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
-                Message message = new Message(msg, porta, null);
+                Message message = new Message(msg, porta, null, null);
                 cliente.cm.sendUDP(destino.getIp(), destino.getPort(), message);
 
             } else if (opcao.equals("2")) {

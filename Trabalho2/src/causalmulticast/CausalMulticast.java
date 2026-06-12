@@ -18,8 +18,11 @@ public class CausalMulticast {
     private final int MULTICAST_PORT = 4446;
     private int myPort;
     private int[] vectorClock = new int[34];
+    private int[][] matrixClock = new int[34][34];
     private Queue<Message> messageBuffer = new LinkedList<>();
     private List<DelayedMessage> delayedMessages = new ArrayList<>();
+    // Buffer para mensagens entregues que aguardam estabilização
+    private List<Message> historyBuffer = new ArrayList<>();
 
     public CausalMulticast(String ip, Integer port, ICausalMulticast client) {
         this.client = client;
@@ -92,11 +95,61 @@ public class CausalMulticast {
 
     private void deliverMessage(Message message) {
         int senderIndex = message.getSenderId() - 5001;
+
         vectorClock[senderIndex]++;
-        System.out.println("\nMensagem entregue.");
-        System.out.println("Relógio local:");
-        System.out.println(Arrays.toString(vectorClock));
+        matrixClock[senderIndex] = message.getVectorClock().clone();
+
+        if (senderIndex != getMyIndex()) {
+            matrixClock[getMyIndex()][senderIndex]++;
+        }
+
+        System.out.println("\n[CAUSAL] Mensagem entregue: " + message.getContent());
+
+        historyBuffer.add(message);
         client.deliver(message.toString());
+        verificarEstabilizacao();
+    }
+
+    private void verificarEstabilizacao() {
+        List<Message> estabilizadas = new ArrayList<>();
+
+        List<Integer> ativos = new ArrayList<>();
+        ativos.add(getMyIndex());
+        for (Participant p : participants) {
+            ativos.add(p.getPort() - 5001);
+        }
+
+        for (Message msg : historyBuffer) {
+            int senderIndex = msg.getSenderId() - 5001;
+            int timestampRemetente = msg.getVectorClock()[senderIndex];
+
+            int min = Integer.MAX_VALUE;
+            for (int x : ativos) {
+                if (matrixClock[x][senderIndex] < min) {
+                    min = matrixClock[x][senderIndex];
+                }
+            }
+
+            if (timestampRemetente <= min) {
+                estabilizadas.add(msg);
+            }
+        }
+
+        if (!estabilizadas.isEmpty()) {
+            historyBuffer.removeAll(estabilizadas);
+            System.out.println("\n[ESTABILIZAÇÃO] " + estabilizadas.size() + " mensagens foram estabilizadas e descartadas!");
+            for(Message m : estabilizadas){
+                System.out.println("  -> Descartada: " + m.getContent());
+            }
+        }
+    }
+
+    private void mostrarMatriz() {
+        System.out.println("\nMatriz:");
+
+        for (int i = 0; i < participants.size() + 1; i++) {
+            System.out.println(Arrays.toString(matrixClock[i]));
+        }
     }
 
     private void processBuffer() {
@@ -278,7 +331,7 @@ public class CausalMulticast {
 
         vectorClock[getMyIndex()]++;
         int[] timestamp = vectorClock.clone();
-        Message message = new Message(msg, myPort, timestamp);
+        Message message = new Message(msg, myPort, timestamp, matrixClock[getMyIndex()].clone());
         Scanner scanner = new Scanner(System.in);
 
         for (Participant p : participants) {
@@ -296,6 +349,10 @@ public class CausalMulticast {
 
         System.out.println("\nRelógio local:");
         System.out.println(Arrays.toString(vectorClock));
+
+        mostrarMatriz();
+        historyBuffer.add(message);
+        verificarEstabilizacao();
     }
 
     public void enviarMensagensAtrasadas() {

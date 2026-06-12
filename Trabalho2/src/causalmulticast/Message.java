@@ -8,11 +8,18 @@ public class Message implements Serializable {
     private String content;
     private int senderId;
     private int[] vectorClock;
+    private int[] matrixRow;
 
-    public Message(String content, int senderId, int[] vectorClock) {
+    public Message(
+            String content,
+            int senderId,
+            int[] vectorClock,
+            int[] matrixRow) {
+
         this.content = content;
         this.senderId = senderId;
         this.vectorClock = vectorClock;
+        this.matrixRow = matrixRow;
     }
 
     public String getContent() {
@@ -27,8 +34,14 @@ public class Message implements Serializable {
         return vectorClock;
     }
 
+    public int[] getMatrixRow() {
+        return matrixRow;
+    }
+
     @Override
     public String toString() {
-        return "Mensagem: " + content + "\nRemetente: " + senderId + "\nVC: " + Arrays.toString(vectorClock);
+        return "Mensagem: " + content +
+                "\nRemetente: " + senderId +
+                "\nVC: " + Arrays.toString(vectorClock);
     }
 }

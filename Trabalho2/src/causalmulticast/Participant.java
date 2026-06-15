@@ -1,4 +1,4 @@
-package causalmulticast;
+package CausalMulticast;
 
 public class Participant {
 

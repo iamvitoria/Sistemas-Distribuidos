@@ -1,25 +1,26 @@
-package causalmulticast;
+package CausalMulticast;
 
 import java.io.Serializable;
-import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Message implements Serializable {
 
     private String content;
     private int senderId;
-    private int[] vectorClock;
-    private int[] matrixRow;
+    private Map<Integer, Integer> vectorClock;
+    private Map<Integer, Integer> matrixRow;
 
     public Message(
             String content,
             int senderId,
-            int[] vectorClock,
-            int[] matrixRow) {
+            Map<Integer, Integer> vectorClock,
+            Map<Integer, Integer> matrixRow) {
 
         this.content = content;
         this.senderId = senderId;
-        this.vectorClock = vectorClock;
-        this.matrixRow = matrixRow;
+        this.vectorClock = vectorClock != null ? new HashMap<>(vectorClock) : new HashMap<>();
+        this.matrixRow = matrixRow != null ? new HashMap<>(matrixRow) : new HashMap<>();
     }
 
     public String getContent() {
@@ -30,11 +31,11 @@ public class Message implements Serializable {
         return senderId;
     }
 
-    public int[] getVectorClock() {
+    public Map<Integer, Integer> getVectorClock() {
         return vectorClock;
     }
 
-    public int[] getMatrixRow() {
+    public Map<Integer, Integer> getMatrixRow() {
         return matrixRow;
     }
 
@@ -42,6 +43,6 @@ public class Message implements Serializable {
     public String toString() {
         return "Mensagem: " + content +
                 "\nRemetente: " + senderId +
-                "\nVC: " + Arrays.toString(vectorClock);
+                "\nVC: " + vectorClock;
     }
 }

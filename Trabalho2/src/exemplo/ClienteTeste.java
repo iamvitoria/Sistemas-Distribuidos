@@ -1,6 +1,7 @@
 package exemplo;
 
-import causalmulticast.*;
+import CausalMulticast.*;
+import java.util.HashMap;
 import java.util.Scanner;
 
 public class ClienteTeste implements ICausalMulticast {
@@ -17,7 +18,7 @@ public class ClienteTeste implements ICausalMulticast {
         System.out.println("\n[MSG RECEBIDA] " + msg);
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("Olá! Informe sua porta:");
@@ -28,7 +29,7 @@ public class ClienteTeste implements ICausalMulticast {
         try {
             Thread.sleep(5000);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            Thread.currentThread().interrupt();
         }
 
         if (cliente.cm.getParticipants().isEmpty()) {
@@ -37,7 +38,11 @@ public class ClienteTeste implements ICausalMulticast {
             System.out.println("Aguarde alguém entrar para enviar mensagens.");
 
             while (cliente.cm.getParticipants().isEmpty()) {
-                Thread.sleep(1000);
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
 
@@ -93,7 +98,7 @@ public class ClienteTeste implements ICausalMulticast {
 
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
-                Message message = new Message(msg, porta, null, null);
+                Message message = new Message(msg, porta, new HashMap<>(), new HashMap<>());
                 cliente.cm.sendUDP(destino.getIp(), destino.getPort(), message);
 
             } else if (opcao.equals("2")) {
@@ -105,7 +110,7 @@ public class ClienteTeste implements ICausalMulticast {
 
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
-                cliente.cm.mcsend(msg, cliente);
+                cliente.cm.mcsend(msg);
             } else if (opcao.equals("3")) {
                 cliente.cm.enviarMensagensAtrasadas();
             } else {

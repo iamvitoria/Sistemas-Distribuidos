@@ -1,4 +1,4 @@
-package causalmulticast;
+package CausalMulticast;
 /**
  * Interface obrigatória para os clientes do middleware.
  * Define o método de callback utilizado para entregar mensagens

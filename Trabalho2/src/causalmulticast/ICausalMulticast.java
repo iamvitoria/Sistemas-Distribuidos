@@ -1,14 +1,14 @@
 package CausalMulticast;
 /**
- * Interface obrigatória para os clientes do middleware.
- * Define o método de callback utilizado para entregar mensagens
- * que já satisfizeram a ordem causal.
+ * Interface utilizada pela aplicação cliente para
+ * receber mensagens entregues pelo middleware.
  */
 public interface ICausalMulticast {
-
     /**
-     * Entrega a mensagem processada e ordenada para a aplicação do usuário.
-     * * @param msg O conteúdo da mensagem estabilizada e pronta para leitura.
+     * Callback executado quando uma mensagem pode ser
+     * entregue à aplicação respeitando a ordem causal.
+     *
+     * @param msg mensagem entregue pelo middleware
      */
     void deliver(String msg);
 }

@@ -4,6 +4,15 @@ import CausalMulticast.*;
 import java.util.HashMap;
 import java.util.Scanner;
 
+/**
+ * Aplicação de exemplo utilizada para demonstrar
+ * o funcionamento do middleware CausalMulticast.
+ *
+ * Permite testar descoberta de participantes,
+ * multicast causal, atraso manual de mensagens
+ * e estabilização.
+ *
+ */
 public class ClienteTeste implements ICausalMulticast {
 
     public CausalMulticast cm;

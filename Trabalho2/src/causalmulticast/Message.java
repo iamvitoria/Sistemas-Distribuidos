@@ -4,6 +4,15 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Representa uma mensagem trocada entre processos.
+ *
+ * Além do conteúdo da mensagem, também transporta
+ * o relógio vetorial e a linha da matriz de relógios
+ * utilizada pelos algoritmos de ordenação causal
+ * e estabilização.
+ *
+ */
 public class Message implements Serializable {
 
     private String content;
@@ -11,12 +20,15 @@ public class Message implements Serializable {
     private Map<Integer, Integer> vectorClock;
     private Map<Integer, Integer> matrixRow;
 
-    public Message(
-            String content,
-            int senderId,
-            Map<Integer, Integer> vectorClock,
-            Map<Integer, Integer> matrixRow) {
-
+    /**
+     * Cria uma nova mensagem.
+     *
+     * @param content conteúdo textual da mensagem
+     * @param senderId identificador do processo remetente
+     * @param vectorClock relógio vetorial anexado à mensagem
+     * @param matrixRow linha da matriz de relógios do remetente
+     */
+    public Message(String content, int senderId, Map<Integer, Integer> vectorClock, Map<Integer, Integer> matrixRow) {
         this.content = content;
         this.senderId = senderId;
         this.vectorClock = vectorClock != null ? new HashMap<>(vectorClock) : new HashMap<>();

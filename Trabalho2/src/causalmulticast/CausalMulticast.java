@@ -5,12 +5,15 @@ import java.util.*;
 import java.io.*;
 
 /**
- * Classe principal do Middleware CausalMulticast.
- * Responsável por gerenciar a descoberta de membros, envio de mensagens UDP
- * simulando multicast, ordenação causal via relógios vetoriais e
- * descarte de mensagens da memória via algoritmo de estabilização (matriz de relógios).
+ * Middleware responsável por fornecer comunicação multicast
+ * com ordenação causal e estabilização de mensagens.
+ *
+ * O envio multicast é implementado através de múltiplos envios
+ * UDP unicast. O sistema utiliza relógios vetoriais para
+ * garantir a ordem causal e matriz de relógios para detectar
+ * mensagens estabilizadas.
+ *
  */
-
 public class CausalMulticast {
 
     private DatagramSocket socket;
@@ -28,14 +31,17 @@ public class CausalMulticast {
     private List<Message> historyBuffer = new ArrayList<>();
 
     /**
-     * Construtor do Middleware.
-     * Inicializa os sockets UDP para comunicação e inicia as threads
-     * do Serviço de Descoberta (IP Multicast).
-     * * @param ip O endereço IP local do usuário (ex: "localhost").
-     * @param port A porta em que este usuário receberá as mensagens unicast.
-     * @param client Referência para a aplicação do usuário (para callback via deliver).
+     * Cria uma instância do middleware CausalMulticast.
+     *
+     * Inicializa os sockets de comunicação, o serviço de descoberta
+     * de participantes e as threads responsáveis pela recepção
+     * de mensagens.
+     *
+     * @param ip endereço IP local do processo
+     * @param port porta utilizada pelo processo
+     * @param client referência para a aplicação cliente que receberá
+     *               callbacks através do método deliver()
      */
-
     public CausalMulticast(String ip, Integer port, ICausalMulticast client) {
         this.client = client;
         this.myPort = port;
@@ -403,6 +409,16 @@ public class CausalMulticast {
         }
     }
 
+    /**
+     * Envia uma mensagem UDP para um participante específico.
+     *
+     * Este método é utilizado internamente para implementar
+     * o multicast através de múltiplos envios unicast.
+     *
+     * @param ip endereço IP do destinatário
+     * @param port porta do destinatário
+     * @param message mensagem a ser enviada
+     */
     public void sendUDP(String ip, int port, Message message) {
         try {
             byte[] data = serialize(message);
@@ -420,6 +436,18 @@ public class CausalMulticast {
         }
     }
 
+    /**
+     * Realiza o envio multicast de uma mensagem obedecendo
+     * a ordenação causal.
+     *
+     * Antes do envio, o relógio vetorial local é incrementado
+     * e anexado à mensagem utilizando a técnica de piggyback.
+     *
+     * O usuário pode optar por atrasar manualmente o envio
+     * para determinados participantes.
+     *
+     * @param msg conteúdo da mensagem multicast
+     */
     public void mcsend(String msg) {
         vectorClock.merge(myPort, 1, Integer::sum);
         Map<Integer, Integer> timestamp = new HashMap<>(vectorClock);
@@ -446,6 +474,13 @@ public class CausalMulticast {
         mostrarEstadoCompleto();
     }
 
+    /**
+     * Permite enviar mensagens que foram previamente
+     * atrasadas durante um multicast.
+     *
+     * O usuário escolhe quais mensagens pendentes deseja
+     * liberar para os respectivos destinatários.
+     */
     public void enviarMensagensAtrasadas() {
 
         if (delayedMessages.isEmpty()) {
@@ -491,6 +526,12 @@ public class CausalMulticast {
         }
     }
 
+    /**
+     * Retorna a lista atual de participantes conhecidos
+     * pelo serviço de descoberta.
+     *
+     * @return lista de participantes ativos
+     */
     public List<Participant> getParticipants() {
         return participants;
     }

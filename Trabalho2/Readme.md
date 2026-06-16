@@ -1,48 +1,221 @@
-1. Arquitetura do Middleware
-   O middleware CausalMulticast atua como uma camada intermediária entre a aplicação do usuário e a rede. A arquitetura foi desenvolvida utilizando comunicação assíncrona orientada a eventos. O sistema utiliza sockets UDP não confiáveis (DatagramSocket) para simular o envio multicast através de múltiplos envios unicast iterativos.
+# CausalMulticast
 
-Para a detecção de membros no grupo de comunicação, foi implementado um Serviço de Descoberta dinâmico. Ele utiliza um MulticastSocket operando no IP 230.0.0.1 (porta 4446). Ao instanciar o middleware, duas Daemon Threads são iniciadas:
+## Arquitetura do Middleware
 
-Announcer: Envia periodicamente (a cada 5 segundos) a porta do processo local para o grupo multicast avisando que está vivo.
+O middleware CausalMulticast atua como uma camada intermediária entre a aplicação do usuário e a rede. A arquitetura foi desenvolvida utilizando comunicação assíncrona orientada a eventos.
 
-Listener: Escuta o canal multicast aguardando mensagens de "DISCOVER". Ao detectar uma nova porta, adiciona o novo participante à lista de membros ativos, permitindo a entrada dinâmica de usuários na topologia.
+O sistema utiliza sockets UDP não confiáveis (`DatagramSocket`) para simular multicast através de múltiplos envios unicast.
 
-2. Algoritmo de Ordenação Causal
-   A garantia de que as mensagens não serão entregues à aplicação fora de ordem baseia-se na implementação de Relógios Vetoriais (Vector Clocks).
-   Sempre que um processo deseja enviar uma mensagem (método mcsend), ele incrementa o seu próprio índice no relógio vetorial e anexa esse vetor à mensagem (técnica de piggyback).
+### Componentes principais
 
-Quando um processo recebe uma mensagem, ele avalia as dependências causais comparando o relógio da mensagem com o seu relógio local:
+#### Serviço de Descoberta
 
-Verifica se a mensagem é exatamente a próxima esperada do remetente (msg.VC[remetente] == local[remetente] + 1).
+Utiliza um `MulticastSocket` no grupo `230.0.0.1:4446`.
 
-Verifica se o remetente não viu nenhuma outra mensagem que o processo atual ainda não viu (msg.VC[k] <= local[k] para todos os outros índices).
+Duas threads são executadas:
 
-Se a condição for satisfeita, a mensagem é entregue via deliver(). Caso contrário, a mensagem é retida no messageBuffer (buffer de mensagens pendentes) até que as mensagens que a antecedem causalmente sejam recebidas. Toda vez que uma mensagem é entregue, o sistema reprocessa o buffer para verificar se alguma mensagem retida foi liberada.
+* **Announcer:** envia periodicamente mensagens `DISCOVER`.
+* **Listener:** recebe mensagens `DISCOVER` e adiciona novos participantes.
 
-3. Algoritmo de Estabilização de Mensagens
-   Para evitar o consumo infinito de memória pelas mensagens entregues, implementou-se o algoritmo de estabilização através de uma Matriz de Relógios (Matrix Clocks). A matriz atua como uma "visão das visões", onde a linha i representa o relógio vetorial conhecido do processo i.
+#### Comunicação
 
-O funcionamento ocorre da seguinte forma:
+O envio multicast é realizado por múltiplos envios UDP individuais para todos os participantes conhecidos.
 
-Após a mensagem ser causalmente ordenada e entregue, ela é movida para um buffer de histórico (historyBuffer).
+#### Aplicação Cliente
 
-A matriz local é atualizada com a visão do remetente (substituindo a linha correspondente pelo vetor recebido no piggyback).
+A aplicação implementa a interface `ICausalMulticast`, recebendo mensagens através do callback:
 
-Para verificar se uma mensagem já estabilizou (ou seja, se todos os participantes já a receberam), o sistema busca o valor mínimo na coluna correspondente ao remetente original da mensagem.
+```java
+public void deliver(String msg)
+```
 
-Se o timestamp (relógio) original da mensagem for menor ou igual a esse valor mínimo da coluna, significa que todos os membros já têm conhecimento dessa mensagem. Neste momento, a mensagem é classificada como estabilizada e é descartada (eliminada do buffer).
+---
 
-4. Instruções de Execução (Como testar)
-   Pré-requisitos: Java Development Kit (JDK) instalado.
+## Algoritmo de Ordenação Causal
 
-Abra um terminal e compile todos os arquivos .java do projeto.
+A ordenação causal é baseada em Relógios Vetoriais.
 
-Abra 3 terminais distintos para simular a execução de 3 processos diferentes na mesma máquina.
+### Envio
 
-Em cada terminal, execute a classe ClienteTeste.
+Ao executar:
 
-Quando solicitado no console, insira portas diferentes para cada processo (ex: Terminal 1 digita 5001, Terminal 2 digita 5002 e Terminal 3 digita 5003).
+```java
+mcsend(String msg)
+```
 
-Aguarde 5 segundos para que o Serviço de Descoberta sincronize todos os terminais.
+o processo:
 
-Utilize o menu iterativo para testar o envio de mensagens (Opção 2 - Multicast). Para fins de demonstração, o sistema perguntará individualmente se deseja enviar ou atrasar a mensagem para cada participante, validando a retenção no buffer e posterior entrega ordenada/estabilização.
+1. Incrementa seu relógio vetorial local.
+2. Copia o vetor.
+3. Anexa o vetor à mensagem (piggyback).
+4. Envia a mensagem aos participantes.
+
+### Recepção
+
+Ao receber uma mensagem, são verificadas duas condições:
+
+### Condição 1
+
+A mensagem deve ser a próxima esperada do remetente.
+
+[
+VC_m[sender] = VC_{local}[sender] + 1
+]
+
+### Condição 2
+
+Nenhuma dependência causal pode estar ausente.
+
+[
+VC_m[k] \le VC_{local}[k]
+]
+
+para todo (k \neq sender).
+
+### Buffer de Mensagens Pendentes
+
+Caso alguma condição não seja satisfeita:
+
+* a mensagem é armazenada em `messageBuffer`;
+* ela não é entregue à aplicação;
+* o buffer é reprocessado após cada nova entrega.
+
+### Entrega
+
+Quando as dependências são satisfeitas:
+
+* a mensagem é entregue através de `deliver()`;
+* o relógio vetorial local é atualizado;
+* o buffer é reavaliado.
+
+---
+
+## Algoritmo de Estabilização
+
+O descarte de mensagens utiliza Matrix Clocks.
+
+### Estrutura
+
+A matriz de relógios mantém o conhecimento que cada processo possui sobre os demais.
+
+Cada linha representa um processo:
+
+```
+M[i]
+```
+
+Cada coluna representa o conhecimento sobre outro processo.
+
+### Funcionamento
+
+Após a entrega causal:
+
+1. A mensagem é armazenada em `historyBuffer`.
+2. A matriz local é atualizada.
+3. O sistema procura o menor valor da coluna referente ao remetente.
+
+### Critério de Estabilização
+
+Uma mensagem é considerada estabilizada quando:
+
+[
+timestamp \le min(coluna)
+]
+
+Isso significa que todos os participantes já possuem conhecimento daquela mensagem.
+
+### Descarte
+
+Quando estabilizada:
+
+* a mensagem é removida do `historyBuffer`;
+* o evento é exibido no terminal.
+
+Exemplo:
+
+```text
+[ESTABILIZAÇÃO] 1 mensagens foram estabilizadas e descartadas
+ -> Descartada: A
+```
+
+---
+
+## Funcionalidades Implementadas
+
+### Middleware
+
+* Descoberta automática de participantes
+* Comunicação multicast via UDP unicast
+* Entrada dinâmica de participantes
+* Detecção de participantes inativos por timeout
+* Entrega para si mesmo
+* Atraso manual de mensagens
+* Reenvio manual de mensagens atrasadas
+
+### Ordenação Causal
+
+* Relógio vetorial
+* Piggyback do relógio
+* Buffer de mensagens pendentes
+* Verificação das dependências causais
+* Entrega causal
+
+### Estabilização
+
+* Matrix Clock
+* Histórico de mensagens
+* Detecção de mensagens estabilizadas
+* Descarte automático
+
+---
+
+## Instruções de Execução
+
+### Compilação
+
+```bash
+javac */*.java
+```
+
+### Execução
+
+Abrir três terminais:
+
+```bash
+java exemplo.ClienteTeste
+```
+
+Portas sugeridas:
+
+| Processo | Porta |
+| -------- | ----- |
+| P1       | 5001  |
+| P2       | 5002  |
+| P3       | 5003  |
+
+Aguardar aproximadamente 5 segundos para descoberta dos participantes.
+
+### Teste da Ordenação Causal
+
+1. P1 envia mensagem "A".
+2. Atrasar envio para P3.
+3. P2 recebe "A".
+4. P2 envia mensagem "B".
+5. Enviar "B" para P3.
+6. P3 receberá "B" antes de "A".
+7. A mensagem ficará armazenada no buffer.
+8. Utilizar a opção de enviar mensagens atrasadas.
+9. Enviar "A" para P3.
+10. O middleware entregará primeiro "A" e depois liberará "B".
+
+### Teste da Estabilização
+
+1. Enviar mensagens normalmente entre os participantes.
+2. Observar a atualização da matriz de relógios.
+3. Verificar o surgimento da mensagem:
+
+```text
+[ESTABILIZAÇÃO] X mensagens foram estabilizadas e descartadas
+```
+
+4. Confirmar que as mensagens foram removidas do histórico.

@@ -35,6 +35,7 @@ public void deliver(String msg)
 ## Algoritmo de Ordenação Causal
 
 A ordenação causal é baseada em Relógios Vetoriais.
+Foi implementada a variante **BSS (Birman-Schiper-Stephenson)**.
 
 ### Envio
 
@@ -224,9 +225,3 @@ Aguardar aproximadamente 5 segundos para descoberta dos participantes.
 ```
 
 4. Confirmar que as mensagens foram removidas do histórico.
-
----
-
-## Nota sobre o algoritmo de ordenação causal
-
-Foi implementada a variante **BSS (Birman-Schiper-Stephenson)**, onde a condição de entrega verifica separadamente `msg.VC[sender] == VC[sender] + 1` e `msg.VC[k] <= VC[k]` para `k ≠ sender`. Isso difere sutilmente do pseudocódigo da Figura 1, mas garante equivalentemente a causalidade.

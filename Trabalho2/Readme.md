@@ -1,4 +1,5 @@
 # CausalMulticast
+Trabalho Realizado por Bianca Bublitz e Vitória Camara
 
 ## Arquitetura do Middleware
 

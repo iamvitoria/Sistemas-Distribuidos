@@ -3,6 +3,7 @@ package CausalMulticast;
 import java.net.*;
 import java.util.*;
 import java.io.*;
+import java.util.concurrent.*;
 
 /**
  * Middleware responsável por fornecer comunicação multicast
@@ -18,17 +19,18 @@ public class CausalMulticast {
 
     private DatagramSocket socket;
     private ICausalMulticast client;
-    private final List<Participant> participants = new ArrayList<>();
+    private final Scanner scanner = new Scanner(System.in);
+    private final List<Participant> participants = new CopyOnWriteArrayList<>();
     private final String MULTICAST_IP = "230.0.0.1";
     private final int MULTICAST_PORT = 4446;
     private int myPort;
-    private Map<Integer, Integer> vectorClock = new HashMap<>();
-    private Map<Integer, Map<Integer, Integer>> matrixClock = new HashMap<>();
-    private Map<Integer, Long> lastHeartbeat = new HashMap<>();
+    private Map<Integer, Integer> vectorClock = new ConcurrentHashMap<>();
+    private Map<Integer, Map<Integer, Integer>> matrixClock = new ConcurrentHashMap<>();
+    private Map<Integer, Long> lastHeartbeat = new ConcurrentHashMap<>();
     private static final long HEARTBEAT_TIMEOUT = 15000;
-    private Queue<Message> messageBuffer = new LinkedList<>();
-    private List<DelayedMessage> delayedMessages = new ArrayList<>();
-    private List<Message> historyBuffer = new ArrayList<>();
+    private Queue<Message> messageBuffer = new ConcurrentLinkedQueue<>();
+    private List<DelayedMessage> delayedMessages = new CopyOnWriteArrayList<>();
+    private List<Message> historyBuffer = new CopyOnWriteArrayList<>();
 
     /**
      * Cria uma instância do middleware CausalMulticast.
@@ -143,6 +145,14 @@ public class CausalMulticast {
             vectorClock.merge(senderPort, 1, Integer::sum);
             matrixClock.put(senderPort, new HashMap<>(msgVC));
 
+            Map<Integer, Integer> senderMatrixRow = message.getMatrixRow();
+            if (senderMatrixRow != null && !senderMatrixRow.isEmpty()) {
+                for (Map.Entry<Integer, Integer> entry : senderMatrixRow.entrySet()) {
+                    ensureKnown(entry.getKey());
+                    matrixClock.get(senderPort).merge(entry.getKey(), entry.getValue(), Integer::max);
+                }
+            }
+
             if (senderPort != myPort) {
                 matrixClock.get(myPort).merge(senderPort, 1, Integer::sum);
             }
@@ -154,7 +164,7 @@ public class CausalMulticast {
         System.out.println("\n[CAUSAL] Mensagem entregue: " + message.getContent());
 
         historyBuffer.add(message);
-        client.deliver(message.toString());
+        client.deliver(message.getContent());
         verificarEstabilizacao();
     }
 
@@ -246,7 +256,7 @@ public class CausalMulticast {
                 }
             }
 
-            messageBuffer.removeAll(remover);
+            remover.forEach(messageBuffer::remove);
 
         } while (delivered);
     }
@@ -310,13 +320,18 @@ public class CausalMulticast {
         listener.start();
 
         Thread announcer = new Thread(() -> {
-            while (true) {
-                try {
-                    anunciarPresenca();
+            try {
+                MulticastSocket multicastSocket = new MulticastSocket();
+                InetAddress group = InetAddress.getByName(MULTICAST_IP);
+                while (true) {
+                    String msg = "DISCOVER:" + myPort;
+                    DatagramPacket packet = new DatagramPacket(
+                        msg.getBytes(), msg.length(), group, MULTICAST_PORT);
+                    multicastSocket.send(packet);
                     Thread.sleep(5000);
-                } catch (Exception e) {
-                    e.printStackTrace();
                 }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         });
 
@@ -353,27 +368,6 @@ public class CausalMulticast {
         cleaner.start();
     }
 
-    private void anunciarPresenca() {
-        try {
-            MulticastSocket multicastSocket = new MulticastSocket();
-            InetAddress group = InetAddress.getByName(MULTICAST_IP);
-
-            String msg = "DISCOVER:" + myPort;
-
-            DatagramPacket packet = new DatagramPacket(
-                    msg.getBytes(),
-                    msg.length(),
-                    group,
-                    MULTICAST_PORT);
-
-            multicastSocket.send(packet);
-            multicastSocket.close();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     private boolean jaExiste(int port) {
         for (Participant p : participants) {
             if (p.getPort() == port) {
@@ -395,6 +389,17 @@ public class CausalMulticast {
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         ObjectInputStream in = new ObjectInputStream(bis);
         return (Message) in.readObject();
+    }
+
+    public void sendDirect(int port, String content) {
+        for (Participant p : participants) {
+            if (p.getPort() == port) {
+                Message message = new Message(content, myPort, new HashMap<>(), new HashMap<>());
+                sendUDP(p.getIp(), port, message);
+                return;
+            }
+        }
+        System.out.println("Participante " + port + " nao encontrado.");
     }
 
     public void listarParticipantes() {
@@ -419,7 +424,7 @@ public class CausalMulticast {
      * @param port porta do destinatário
      * @param message mensagem a ser enviada
      */
-    public void sendUDP(String ip, int port, Message message) {
+    void sendUDP(String ip, int port, Message message) {
         try {
             byte[] data = serialize(message);
 
@@ -448,12 +453,10 @@ public class CausalMulticast {
      *
      * @param msg conteúdo da mensagem multicast
      */
-    public void mcsend(String msg) {
+    public void mcsend(String msg, ICausalMulticast client) {
         vectorClock.merge(myPort, 1, Integer::sum);
         Map<Integer, Integer> timestamp = new HashMap<>(vectorClock);
         Message message = new Message(msg, myPort, timestamp, new HashMap<>(matrixClock.get(myPort)));
-        Scanner scanner = new Scanner(System.in);
-
         for (Participant p : participants) {
             System.out.println("\nEnviar para " + p.getPort() + "? (s/n)");
             String resposta = scanner.nextLine();
@@ -466,10 +469,10 @@ public class CausalMulticast {
             }
         }
 
-        matrixClock.put(myPort, new HashMap<>(vectorClock));
+        matrixClock.get(myPort).merge(myPort, 1, Integer::sum);
         System.out.println("\n[CAUSAL] Mensagem entregue: " + message.getContent());
         historyBuffer.add(message);
-        this.client.deliver(message.toString());
+        this.client.deliver(message.getContent());
         verificarEstabilizacao();
         mostrarEstadoCompleto();
     }
@@ -495,7 +498,6 @@ public class CausalMulticast {
         }
 
         System.out.print("\nDigite o(s) indice(s) para enviar (separados por espaco), ou Enter para sair: ");
-        Scanner scanner = new Scanner(System.in);
         String linha = scanner.nextLine().trim();
 
         if (linha.isEmpty()) return;

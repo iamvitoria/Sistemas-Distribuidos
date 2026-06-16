@@ -1,7 +1,6 @@
 package exemplo;
 
 import CausalMulticast.*;
-import java.util.HashMap;
 import java.util.Scanner;
 
 /**
@@ -107,8 +106,7 @@ public class ClienteTeste implements ICausalMulticast {
 
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
-                Message message = new Message(msg, porta, new HashMap<>(), new HashMap<>());
-                cliente.cm.sendUDP(destino.getIp(), destino.getPort(), message);
+                cliente.cm.sendDirect(portaDestino, msg);
 
             } else if (opcao.equals("2")) {
 
@@ -119,7 +117,7 @@ public class ClienteTeste implements ICausalMulticast {
 
                 System.out.print("Mensagem: ");
                 String msg = scanner.nextLine();
-                cliente.cm.mcsend(msg);
+                cliente.cm.mcsend(msg, cliente);
             } else if (opcao.equals("3")) {
                 cliente.cm.enviarMensagensAtrasadas();
             } else {

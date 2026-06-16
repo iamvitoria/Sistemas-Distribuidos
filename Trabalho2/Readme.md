@@ -12,10 +12,11 @@ O sistema utiliza sockets UDP não confiáveis (`DatagramSocket`) para simular m
 
 Utiliza um `MulticastSocket` no grupo `230.0.0.1:4446`.
 
-Duas threads são executadas:
+Três threads são executadas:
 
-* **Announcer:** envia periodicamente mensagens `DISCOVER`.
-* **Listener:** recebe mensagens `DISCOVER` e adiciona novos participantes.
+* **Announcer:** envia periodicamente mensagens `DISCOVER` a cada 5s (reusa o mesmo socket).
+* **Listener:** recebe mensagens `DISCOVER` e registra/atualiza participantes.
+* **Cleaner:** remove participantes que não anunciaram presença por 15s (timeout).
 
 #### Comunicação
 
@@ -23,7 +24,7 @@ O envio multicast é realizado por múltiplos envios UDP individuais para todos 
 
 #### Aplicação Cliente
 
-A aplicação implementa a interface `ICausalMulticast`, recebendo mensagens através do callback:
+A aplicação implementa a interface `ICausalMulticast`, recebendo o conteúdo da mensagem através do callback:
 
 ```java
 public void deliver(String msg)
@@ -40,15 +41,16 @@ A ordenação causal é baseada em Relógios Vetoriais.
 Ao executar:
 
 ```java
-mcsend(String msg)
+mcsend(String msg, ICausalMulticast client)
 ```
 
 o processo:
 
-1. Incrementa seu relógio vetorial local.
-2. Copia o vetor.
-3. Anexa o vetor à mensagem (piggyback).
-4. Envia a mensagem aos participantes.
+1. Incrementa seu relógio vetorial local (`VC[i]++`).
+2. Copia o vetor e a linha da matriz (`MC[i]`).
+3. Anexa ambos à mensagem (piggyback).
+4. Envia a mensagem aos participantes selecionados (ou atrasa).
+5. Entrega a mensagem para si mesmo via `deliver()`, atualizando `MC[i][i]++`.
 
 ### Recepção
 
@@ -84,9 +86,11 @@ Caso alguma condição não seja satisfeita:
 
 Quando as dependências são satisfeitas:
 
-* a mensagem é entregue através de `deliver()`;
-* o relógio vetorial local é atualizado;
-* o buffer é reavaliado.
+* a mensagem é entregue através de `deliver(message.getContent())`;
+* o relógio vetorial local é atualizado (`VC[sender]++`);
+* a matriz local é atualizada com o VC recebido e a `matrixRow` (propagação de conhecimento);
+* o buffer de mensagens pendentes é reavaliado;
+* o estado completo (VC, matriz, buffers) é exibido automaticamente no terminal.
 
 ---
 
@@ -96,12 +100,12 @@ O descarte de mensagens utiliza Matrix Clocks.
 
 ### Estrutura
 
-A matriz de relógios mantém o conhecimento que cada processo possui sobre os demais.
+A matriz de relógios (`Map<Integer, Map<Integer, Integer>>`) mantém o conhecimento que cada processo possui sobre os demais, indexada dinamicamente por porta (sem índices fixos).
 
 Cada linha representa um processo:
 
 ```
-M[i]
+M[porta_observador][porta_alvo]
 ```
 
 Cada coluna representa o conhecimento sobre outro processo.
@@ -144,28 +148,29 @@ Exemplo:
 
 ### Middleware
 
-* Descoberta automática de participantes
+* Descoberta automática de participantes com heartbeat
 * Comunicação multicast via UDP unicast
-* Entrada dinâmica de participantes
-* Detecção de participantes inativos por timeout
-* Entrega para si mesmo
-* Atraso manual de mensagens
-* Reenvio manual de mensagens atrasadas
+* Entrada e saída dinâmica de participantes (timeout de 15s)
+* Estruturas thread-safe (`ConcurrentHashMap`, `CopyOnWriteArrayList`, `ConcurrentLinkedQueue`)
+* Entrega causal para si mesmo (self-delivery)
+* Atraso manual de mensagens por destinatário
+* Reenvio seletivo de mensagens atrasadas (escolha por índice) 
 
 ### Ordenação Causal
 
-* Relógio vetorial
-* Piggyback do relógio
-* Buffer de mensagens pendentes
-* Verificação das dependências causais
-* Entrega causal
+* Relógio vetorial dinâmico (porta → valor, sem índice fixo)
+* Piggyback do relógio e da linha da matriz
+* Buffer de mensagens pendentes com reprocessamento automático
+* Verificação das dependências causais (variante BSS)
+* Entrega causal com exibição automática do estado completo
 
 ### Estabilização
 
-* Matrix Clock
-* Histórico de mensagens
-* Detecção de mensagens estabilizadas
-* Descarte automático
+* Matrix Clock dinâmico (porta → mapa)
+* Propagação da `matrixRow` entre processos
+* Histórico de mensagens entregues
+* Detecção de mensagens estabilizadas por consenso da matriz
+* Descarte automático com notificação no terminal
 
 ---
 
@@ -174,7 +179,7 @@ Exemplo:
 ### Compilação
 
 ```bash
-javac */*.java
+javac -d out -sourcepath src src/exemplo/ClienteTeste.java
 ```
 
 ### Execução
@@ -197,16 +202,16 @@ Aguardar aproximadamente 5 segundos para descoberta dos participantes.
 
 ### Teste da Ordenação Causal
 
-1. P1 envia mensagem "A".
-2. Atrasar envio para P3.
+1. P1 envia mensagem "A" (opção 2 - Multicast).
+2. Atrasar envio para P3 (responder `n` para P3).
 3. P2 recebe "A".
-4. P2 envia mensagem "B".
-5. Enviar "B" para P3.
+4. P2 envia mensagem "B" (opção 2 - Multicast).
+5. Enviar "B" para P3 (responder `s` para P3).
 6. P3 receberá "B" antes de "A".
-7. A mensagem ficará armazenada no buffer.
-8. Utilizar a opção de enviar mensagens atrasadas.
-9. Enviar "A" para P3.
-10. O middleware entregará primeiro "A" e depois liberará "B".
+7. A mensagem "B" ficará armazenada no buffer de ordenação causal.
+8. Utilizar a opção 3 - Enviar mensagens atrasadas.
+9. Escolher o índice da mensagem "A" para P3 (ex: `0`).
+10. O middleware entregará primeiro "A" e depois liberará "B" automaticamente.
 
 ### Teste da Estabilização
 
@@ -219,3 +224,9 @@ Aguardar aproximadamente 5 segundos para descoberta dos participantes.
 ```
 
 4. Confirmar que as mensagens foram removidas do histórico.
+
+---
+
+## Nota sobre o algoritmo de ordenação causal
+
+Foi implementada a variante **BSS (Birman-Schiper-Stephenson)**, onde a condição de entrega verifica separadamente `msg.VC[sender] == VC[sender] + 1` e `msg.VC[k] <= VC[k]` para `k ≠ sender`. Isso difere sutilmente do pseudocódigo da Figura 1, mas garante equivalentemente a causalidade.
